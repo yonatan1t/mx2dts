@@ -90,13 +90,14 @@ class McuInfo:
     @property
     def family_dir(self) -> Optional[str]:
         """Zephyr DTS family directory, e.g., 'l4'."""
-        key = self.clock_tree or self.family
-        # Try exact match, then prefix match
-        if key in FAMILY_DIR_MAP:
-            return FAMILY_DIR_MAP[key]
-        for k, v in FAMILY_DIR_MAP.items():
-            if key.startswith(k):
-                return v
+        for key in (self.clock_tree, self.family):
+            if not key:
+                continue
+            if key in FAMILY_DIR_MAP:
+                return FAMILY_DIR_MAP[key]
+            for k, v in FAMILY_DIR_MAP.items():
+                if key.startswith(k):
+                    return v
         return None
 
     def has_ip(self, instance_name: str) -> bool:

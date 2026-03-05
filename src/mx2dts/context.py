@@ -61,39 +61,30 @@ def _find_soc_dtsi_include(mcu: McuInfo, zephyr: ZephyrPaths) -> Optional[str]:
     if not soc_dir.exists():
         return None
 
-    # Extract MCU series (e.g., 'l476' from 'STM32L476RGTx')
     import re
-    m = re.match(r"STM32([A-Z0-9]+?)([A-Z][A-Z0-9]*)$", mcu.ref_name, re.IGNORECASE)
-    series = m.group(1).lower() if m else None
 
-    # Extract flash size letter from user MCU name (e.g., 'G' from 'STM32L476RGTx')
-    flash_code = _extract_flash_code(mcu.ref_name or mcu.clock_tree)
+    # Strip 'STM32' prefix and lowercase the remainder, e.g. 'WB55RGVx' → 'wb55rgvx'
+    m = re.match(r"STM32(.+)", mcu.ref_name, re.IGNORECASE)
+    if not m:
+        return None
+    suffix = m.group(1).lower().rstrip("x")  # e.g. 'wb55rgv'
 
-    if series:
-        # Try stm32{series}X{flash}.dtsi  (e.g., stm32l476Xg.dtsi)
+    flash_code = _extract_flash_code(mcu.ref_name)
+
+    # Try progressively shorter prefixes until we find matching DTSI files
+    for length in range(len(suffix), 0, -1):
+        prefix = suffix[:length]
+        candidates = sorted(soc_dir.glob(f"stm32{prefix}*.dtsi"))
+        if not candidates:
+            continue
+
+        # Prefer files that contain the flash code (e.g. 'g' in 'stm32wb55Xg.dtsi')
         if flash_code:
-            for candidate in soc_dir.glob(f"stm32{series}*.dtsi"):
-                stem = candidate.stem.lower()
-                if flash_code.lower() in stem and stem.startswith(f"stm32{series}"):
-                    return f"st/{family_dir}/{candidate.name}"
+            with_flash = [f for f in candidates if flash_code.lower() in f.name.lower()]
+            if with_flash:
+                return f"st/{family_dir}/{with_flash[0].name}"
 
-        # Try stm32{series}.dtsi base file
-        base = soc_dir / f"stm32{series}.dtsi"
-        if base.exists():
-            return f"st/{family_dir}/{base.name}"
-
-        # Best match: take the most specific file
-        candidates = sorted(soc_dir.glob(f"stm32{series}*.dtsi"))
-        if candidates:
-            # Prefer files with flash code in name
-            if flash_code:
-                scored = [
-                    (f.name.lower().count(flash_code.lower()), f)
-                    for f in candidates
-                ]
-                scored.sort(reverse=True)
-                return f"st/{family_dir}/{scored[0][1].name}"
-            return f"st/{family_dir}/{candidates[-1].name}"
+        return f"st/{family_dir}/{candidates[0].name}"
 
     return None
 

@@ -37,6 +37,7 @@ Changelog     = "https://github.com/yourname/mx2dts/releases"
 #   pip install /path/to/zephyr/scripts/dts/python-devicetree
 zephyr = ["devicetree>=0.0.2"]
 dev = ["pytest>=7.0", "pytest-cov"]
+app = ["streamlit>=1.30"]
 
 [project.scripts]
 mx2dts = "mx2dts.cli:main"
