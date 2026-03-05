@@ -48,6 +48,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Path to CubeMX db/ directory (auto-detected if not given)",
     )
     parser.add_argument(
+        "--mode",
+        choices=["board", "overlay"],
+        default="board",
+        help=(
+            "Output mode: 'board' (default) generates a complete .dts file "
+            "with root node and #include directives; 'overlay' generates a "
+            "minimal .overlay suitable for adding to an existing Zephyr project."
+        ),
+    )
+    parser.add_argument(
         "--warn-only",
         action="store_true",
         help="Exit 0 even if there are conversion warnings",
@@ -142,11 +152,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     # ── Generate DTS ──────────────────────────────────────────────────────────
-    print("Converting …")
-    dts_text = generate_dts(ctx, board_name=args.board_name)
+    print(f"Converting ({args.mode} mode) …")
+    dts_text = generate_dts(ctx, board_name=args.board_name, mode=args.mode)
 
     # ── Output ────────────────────────────────────────────────────────────────
-    output_path = args.output or (ioc_path.stem + ".dts")
+    default_ext = ".overlay" if args.mode == "overlay" else ".dts"
+    output_path = args.output or (ioc_path.stem + default_ext)
     output_path = Path(output_path)
     output_path.write_text(dts_text, encoding="utf-8")
     print(f"Written: {output_path}")

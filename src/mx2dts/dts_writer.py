@@ -25,9 +25,27 @@ _HEADER = """\
 _DTS_VERSION = "/dts-v1/;"
 
 
-def generate_dts(ctx: ConversionContext, board_name: Optional[str] = None) -> str:
-    """Run all converters and assemble a complete .dts file string."""
+def generate_dts(
+    ctx: ConversionContext,
+    board_name: Optional[str] = None,
+    mode: str = "board",
+) -> str:
+    """Run all converters and assemble a .dts or .overlay file string.
 
+    Args:
+        ctx:        Conversion context.
+        board_name: Optional board model name (board mode only).
+        mode:       ``"board"`` (default) for a full DTS file, or
+                    ``"overlay"`` for a minimal Zephyr project overlay.
+    """
+    if mode == "overlay":
+        return _generate_overlay(ctx)
+    return _generate_board(ctx, board_name)
+
+
+# ── Board mode ─────────────────────────────────────────────────────────────────
+
+def _generate_board(ctx: ConversionContext, board_name: Optional[str]) -> str:
     lines: list[str] = []
 
     # Header comment
@@ -55,56 +73,117 @@ def generate_dts(ctx: ConversionContext, board_name: Optional[str] = None) -> st
         ctx.warn("Could not determine pinctrl DTSI include path")
         lines.append("/* TODO: add pinctrl DTSI include */")
 
-    # Add GPIO input codes header if there are gpio-keys
-    gpio_pins = ctx.ioc.gpio_pins()
-    if any(not p.is_skip and not _is_output_signal(p.signal) for p in gpio_pins):
-        lines.append("#include <zephyr/dt-bindings/input/input-event-codes.h>")
-
+    lines.extend(_extra_includes(ctx))
     lines.append("")
 
-    # Run all converters
+    # Run converters
+    all_nodes, dma_converter = _run_converters(ctx)
+
+    # Root node
+    lines.append(_make_root_node(ctx, board_name))
+    lines.append("")
+
+    # Peripheral overlay nodes
+    lines.extend(_render_nodes(all_nodes))
+
+    # DMA properties merged into peripheral nodes
+    lines.extend(_render_dma_props(dma_converter))
+
+    # Warning summary
+    lines.extend(_render_warnings(ctx))
+
+    return "\n".join(lines) + "\n"
+
+
+# ── Overlay mode ───────────────────────────────────────────────────────────────
+
+def _generate_overlay(ctx: ConversionContext) -> str:
+    lines: list[str] = []
+
+    lines.append(_HEADER.format(
+        ioc_name=ctx.ioc.path.name,
+        mcu_name=ctx.ioc.mcu_user_name or ctx.ioc.mcu_name,
+    ))
+
+    lines.extend(_extra_includes(ctx))
+    if lines[-1] != "":
+        lines.append("")
+
+    # Run converters
+    all_nodes, dma_converter = _run_converters(ctx)
+
+    # Peripheral overlay nodes only (no root node, no flash)
+    lines.extend(_render_nodes(all_nodes))
+
+    # DMA properties
+    lines.extend(_render_dma_props(dma_converter))
+
+    # Warning summary
+    lines.extend(_render_warnings(ctx))
+
+    return "\n".join(lines) + "\n"
+
+
+# ── Shared helpers ─────────────────────────────────────────────────────────────
+
+def _extra_includes(ctx: ConversionContext) -> list[str]:
+    """Extra #include lines needed regardless of mode (e.g., input event codes)."""
+    result = []
+    gpio_pins = ctx.ioc.gpio_pins()
+    if any(not p.is_skip and not _is_output_signal(p.signal) for p in gpio_pins):
+        result.append("#include <zephyr/dt-bindings/input/input-event-codes.h>")
+    return result
+
+
+def _run_converters(ctx: ConversionContext) -> tuple[list[DtsNode], Optional[DmaConverter]]:
     all_nodes: list[DtsNode] = []
     dma_converter: Optional[DmaConverter] = None
-
     for converter_cls in ALL_CONVERTERS:
         converter = converter_cls()
         nodes = converter.convert(ctx)
         all_nodes.extend(nodes)
         if isinstance(converter, DmaConverter):
             dma_converter = converter
+    return all_nodes, dma_converter
 
-    # Root node
-    lines.append(_make_root_node(ctx, board_name))
-    lines.append("")
 
-    # All overlay nodes (clock, peripheral, GPIO, timers)
-    for node in all_nodes:
+def _render_nodes(nodes: list[DtsNode]) -> list[str]:
+    lines = []
+    for node in nodes:
         lines.append(node.render())
         lines.append("")
+    return lines
 
-    # Merge DMA properties into peripheral nodes (as comments for now)
-    if dma_converter and dma_converter.peripheral_dma_props:
-        lines.append("/*")
-        lines.append(" * DMA assignments — add these properties to the appropriate")
-        lines.append(" * peripheral nodes above and verify channel/request numbers:")
-        for periph, props in dma_converter.peripheral_dma_props.items():
-            lines.append(f" *")
-            lines.append(f" * &{periph} {{")
-            for k, v in props.items():
-                lines.append(f" *\t{k} = {v};")
-            lines.append(f" * }};")
-        lines.append(" */")
-        lines.append("")
 
-    # Warning summary
-    if ctx.warnings:
-        lines.append("/*")
-        lines.append(" * ── Conversion warnings ─────────────────────────────────────────")
-        for i, w in enumerate(ctx.warnings, 1):
-            lines.append(f" * [{i:02d}] {w}")
-        lines.append(" */")
+def _render_dma_props(dma_converter: Optional[DmaConverter]) -> list[str]:
+    if not (dma_converter and dma_converter.peripheral_dma_props):
+        return []
+    lines = [
+        "/*",
+        " * DMA assignments — merge into the peripheral nodes above",
+        " * and verify channel / request numbers against your MCU's DMA table:",
+    ]
+    for periph, props in dma_converter.peripheral_dma_props.items():
+        lines.append(" *")
+        lines.append(f" * &{periph} {{")
+        for k, v in props.items():
+            lines.append(f" *\t{k} = {v};")
+        lines.append(" * };")
+    lines += [" */", ""]
+    return lines
 
-    return "\n".join(lines) + "\n"
+
+def _render_warnings(ctx: ConversionContext) -> list[str]:
+    if not ctx.warnings:
+        return []
+    lines = [
+        "/*",
+        " * ── Conversion warnings ─────────────────────────────────────────",
+    ]
+    for i, w in enumerate(ctx.warnings, 1):
+        lines.append(f" * [{i:02d}] {w}")
+    lines.append(" */")
+    return lines
 
 
 def _make_root_node(ctx: ConversionContext, board_name: Optional[str]) -> str:

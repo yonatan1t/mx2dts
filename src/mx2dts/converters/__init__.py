@@ -65,6 +65,17 @@ from .i2c import I2cConverter
 from .adc import AdcConverter
 from .dma import DmaConverter
 from .timers import TimersConverter
+from .can import CanConverter
+from .usb import UsbConverter
+from .rtc import RtcConverter
+from .watchdog import WatchdogConverter
+from .sdmmc import SdmmcConverter
+from .qspi import QspiConverter
+from .ethernet import EthernetConverter
+from .rng_crc import RngConverter, CrcConverter
+from .sai import SaiConverter
+from .i2s import I2sConverter
+from .dcmi import DcmiConverter
 
 ALL_CONVERTERS: list[type[BaseConverter]] = [
     ClocksConverter,
@@ -75,4 +86,16 @@ ALL_CONVERTERS: list[type[BaseConverter]] = [
     I2cConverter,
     AdcConverter,
     TimersConverter,
+    CanConverter,
+    UsbConverter,
+    RtcConverter,
+    WatchdogConverter,
+    SdmmcConverter,
+    QspiConverter,
+    EthernetConverter,
+    RngConverter,
+    CrcConverter,
+    SaiConverter,
+    I2sConverter,
+    DcmiConverter,
 ]
