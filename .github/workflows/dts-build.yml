@@ -1,5 +1,6 @@
 # CI: Convert IOCs to DTS and verify with Zephyr west build (hello_world).
 # Uses the official Zephyr Docker image; only checks that DTS compiles (west build phase).
+# Steps run on the host; Zephyr tools run inside Docker to avoid container permission issues.
 name: DTS build (hello_world + IOCs)
 
 on:
@@ -8,15 +9,9 @@ on:
   pull_request:
     branches: [master, main]
 
-env:
-  ZEPHYR_BASE: ${{ github.workspace }}/zephyrproject/zephyr
-
 jobs:
   build-dts:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/zephyrproject-rtos/zephyr-build:latest
-      options: --privileged
     steps:
       - name: Checkout mx2dts
         uses: actions/checkout@v4
@@ -33,18 +28,19 @@ jobs:
           key: west-${{ runner.os }}-${{ hashFiles('.github/workflows/dts-build.yml') }}
           restore-keys: west-${{ runner.os }}-
 
-      - name: West init and update
+      - name: West init and update (if cache miss)
         if: steps.west-cache.outputs.cache-hit != 'true'
         run: |
-          cd "$GITHUB_WORKSPACE"
-          west init zephyrproject
-          cd zephyrproject
-          west update
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workdir" -w /workdir \
+            -e GITHUB_WORKSPACE=/workdir \
+            ghcr.io/zephyrproject-rtos/zephyr-build:latest \
+            bash -c 'west init zephyrproject && cd zephyrproject && west update'
 
-      - name: Install mx2dts
+      - name: Convert IOCs and build hello_world (Zephyr Docker)
         run: |
-          pip install -e "$GITHUB_WORKSPACE"
-
-      - name: Convert IOCs and build hello_world
-        run: |
-          "$GITHUB_WORKSPACE/ci/build-and-verify-dts.sh"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workdir" -w /workdir \
+            -e GITHUB_WORKSPACE=/workdir \
+            ghcr.io/zephyrproject-rtos/zephyr-build:latest \
+            bash -c 'pip install -e /workdir && /workdir/ci/build-and-verify-dts.sh'
