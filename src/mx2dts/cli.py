@@ -162,6 +162,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     output_path.write_text(dts_text, encoding="utf-8")
     print(f"Written: {output_path}")
 
+    # ── Report unhandled IOC items ────────────────────────────────────────────
+    if ctx.unhandled_report:
+        print(f"\n{len(ctx.unhandled_report)} IOC item(s) not rendered in DTS:")
+        for item in ctx.unhandled_report:
+            print(f"  {item}")
+
     # ── Report warnings ───────────────────────────────────────────────────────
     if ctx.warnings:
         print(f"\n{len(ctx.warnings)} warning(s):")

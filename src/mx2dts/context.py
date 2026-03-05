@@ -20,6 +20,7 @@ class ConversionContext:
     cubemx: CubeMXPaths
     pinctrl_db: PinctrlDb
     warnings: list[str] = field(default_factory=list)
+    unhandled_report: list[str] = field(default_factory=list)
 
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)

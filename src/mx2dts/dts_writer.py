@@ -18,9 +18,33 @@ _HEADER = """\
  * SPDX-License-Identifier: Apache-2.0
  *
  * WARNING: Review all values before using in production.
- * DMA request numbers and some clock settings may need manual verification.
+ * DMA request numbers and some clock settings may need manual verification.{unhandled_section}
  */
 """
+
+# IP prefixes that at least one converter knows how to handle.
+# Used to detect active IPs for which no converter exists.
+_HANDLED_PREFIXES: tuple[str, ...] = (
+    "RCC",
+    "DMA", "BDMA", "GPDMA",
+    "USART", "UART", "LPUART",
+    "SPI", "I2C", "FMPI2C",
+    "ADC", "DAC",
+    "TIM",
+    "CAN", "FDCAN",
+    "USB",
+    "RTC", "TAMP",
+    "IWDG", "WWDG",
+    "SDMMC", "SDIO",
+    "QUADSPI", "QSPI", "OCTOSPI", "OSPI",
+    "ETH", "ETHERNET",
+    "RNG", "CRC",
+    "SAI", "I2S",
+    "DCMI",
+)
+
+# Active IPs that intentionally have no Zephyr DTS equivalent.
+_SYSTEM_IPS: frozenset[str] = frozenset({"NVIC", "SYS", "MEMORYMAP"})
 
 _DTS_VERSION = "/dts-v1/;"
 
@@ -46,13 +70,11 @@ def generate_dts(
 # ── Board mode ─────────────────────────────────────────────────────────────────
 
 def _generate_board(ctx: ConversionContext, board_name: Optional[str]) -> str:
-    lines: list[str] = []
+    # Run converters first so unhandled_report is populated before header is built.
+    all_nodes, dma_converter = _run_converters(ctx)
 
-    # Header comment
-    lines.append(_HEADER.format(
-        ioc_name=ctx.ioc.path.name,
-        mcu_name=ctx.ioc.mcu_user_name or ctx.ioc.mcu_name,
-    ))
+    lines: list[str] = []
+    lines.append(_format_header(ctx))
     lines.append(_DTS_VERSION)
     lines.append("")
 
@@ -76,9 +98,6 @@ def _generate_board(ctx: ConversionContext, board_name: Optional[str]) -> str:
     lines.extend(_extra_includes(ctx))
     lines.append("")
 
-    # Run converters
-    all_nodes, dma_converter = _run_converters(ctx)
-
     # Root node
     lines.append(_make_root_node(ctx, board_name))
     lines.append("")
@@ -98,19 +117,15 @@ def _generate_board(ctx: ConversionContext, board_name: Optional[str]) -> str:
 # ── Overlay mode ───────────────────────────────────────────────────────────────
 
 def _generate_overlay(ctx: ConversionContext) -> str:
-    lines: list[str] = []
+    # Run converters first so unhandled_report is populated before header is built.
+    all_nodes, dma_converter = _run_converters(ctx)
 
-    lines.append(_HEADER.format(
-        ioc_name=ctx.ioc.path.name,
-        mcu_name=ctx.ioc.mcu_user_name or ctx.ioc.mcu_name,
-    ))
+    lines: list[str] = []
+    lines.append(_format_header(ctx))
 
     lines.extend(_extra_includes(ctx))
     if lines[-1] != "":
         lines.append("")
-
-    # Run converters
-    all_nodes, dma_converter = _run_converters(ctx)
 
     # Peripheral overlay nodes only (no root node, no flash)
     lines.extend(_render_nodes(all_nodes))
@@ -125,6 +140,26 @@ def _generate_overlay(ctx: ConversionContext) -> str:
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
+
+def _format_header(ctx: ConversionContext) -> str:
+    """Format the file header comment, including any unhandled IOC items."""
+    if ctx.unhandled_report:
+        lines = [
+            "",
+            " *",
+            " * NOT RENDERED — IOC items with no DTS equivalent found:",
+        ]
+        for item in ctx.unhandled_report:
+            lines.append(f" *   {item}")
+        unhandled_section = "\n".join(lines)
+    else:
+        unhandled_section = ""
+    return _HEADER.format(
+        ioc_name=ctx.ioc.path.name,
+        mcu_name=ctx.ioc.mcu_user_name or ctx.ioc.mcu_name,
+        unhandled_section=unhandled_section,
+    )
+
 
 def _extra_includes(ctx: ConversionContext) -> list[str]:
     """Extra #include lines needed regardless of mode (e.g., input event codes)."""
@@ -144,7 +179,51 @@ def _run_converters(ctx: ConversionContext) -> tuple[list[DtsNode], Optional[Dma
         all_nodes.extend(nodes)
         if isinstance(converter, DmaConverter):
             dma_converter = converter
+    _compute_unhandled(ctx)
     return all_nodes, dma_converter
+
+
+def _compute_unhandled(ctx: ConversionContext) -> None:
+    """Populate ctx.unhandled_report with IOC items that were not converted to DTS."""
+    ioc = ctx.ioc
+    report: list[str] = []
+
+    # 1. Active IPs (Mcu.IP*) that no converter handles.
+    for ip in ioc.active_ips:
+        if ip in _SYSTEM_IPS:
+            continue
+        # Board BSP entries (e.g., "NUCLEO-WB55RG") contain "-" or are not
+        # standard peripheral names — skip them silently.
+        if "-" in ip or not ip[0].isalpha():
+            continue
+        if any(ip == p or ip.startswith(p) for p in _HANDLED_PREFIXES):
+            continue
+        report.append(f"Active IP not converted: {ip}")
+
+    # 2. Pins whose peripheral signal is not covered by any active IP.
+    active_set = set(ioc.active_ips)
+    # Group unconverted pins by peripheral name to avoid repetition.
+    uncovered: dict[str, list[str]] = {}
+    for pin in ioc.pins.values():
+        periph = pin.peripheral
+        if periph is None:
+            continue
+        if periph in active_set:
+            continue
+        # Only report peripherals that a converter would know how to handle
+        # (i.e., the peripheral type exists but the IP wasn't activated).
+        if not any(periph == p or periph.startswith(p) for p in _HANDLED_PREFIXES):
+            continue
+        label = f" ({pin.label})" if pin.label else ""
+        uncovered.setdefault(periph, []).append(f"{pin.name}{label}")
+
+    for periph, pins in sorted(uncovered.items()):
+        report.append(
+            f"Peripheral {periph} not active in IOC — "
+            f"pins with {periph} signal: {', '.join(pins)}"
+        )
+
+    ctx.unhandled_report = report
 
 
 def _render_nodes(nodes: list[DtsNode]) -> list[str]:
