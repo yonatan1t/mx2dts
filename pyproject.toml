@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "mx2dts"
+version = "0.1.0"
+description = "Convert STM32CubeMX .ioc files to Zephyr DTS"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+# Install devicetree from Zephyr source:
+#   pip install /path/to/zephyr/scripts/dts/python-devicetree
+zephyr = ["devicetree>=0.0.2"]
+dev = ["pytest>=7.0", "pytest-cov"]
+
+[project.scripts]
+mx2dts = "mx2dts.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
