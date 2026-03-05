@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Embedded Systems",
     "Topic :: Software Development :: Code Generators",
 ]
-dependencies = []
+dependencies = ["streamlit>=1.30"]
 
 [project.urls]
 Homepage      = "https://github.com/yourname/mx2dts"
