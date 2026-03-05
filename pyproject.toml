@@ -6,9 +6,31 @@ build-backend = "setuptools.build_meta"
 name = "mx2dts"
 version = "0.1.0"
 description = "Convert STM32CubeMX .ioc files to Zephyr DTS"
+readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
+keywords = ["stm32", "zephyr", "devicetree", "dts", "cubemx", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = []
+
+[project.urls]
+Homepage      = "https://github.com/yourname/mx2dts"
+Documentation = "https://github.com/yourname/mx2dts#readme"
+"Bug Tracker" = "https://github.com/yourname/mx2dts/issues"
+Changelog     = "https://github.com/yourname/mx2dts/releases"
 
 [project.optional-dependencies]
 # Install devicetree from Zephyr source:
