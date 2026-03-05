@@ -31,7 +31,7 @@ jobs:
       - name: West init and update (if cache miss)
         if: steps.west-cache.outputs.cache-hit != 'true'
         run: |
-          docker run --rm \
+          docker run --rm --user root \
             -v "$GITHUB_WORKSPACE:/workdir" -w /workdir \
             -e GITHUB_WORKSPACE=/workdir \
             ghcr.io/zephyrproject-rtos/zephyr-build:latest \
@@ -39,7 +39,7 @@ jobs:
 
       - name: Convert IOCs and build hello_world (Zephyr Docker)
         run: |
-          docker run --rm \
+          docker run --rm --user root \
             -v "$GITHUB_WORKSPACE:/workdir" -w /workdir \
             -e GITHUB_WORKSPACE=/workdir \
             ghcr.io/zephyrproject-rtos/zephyr-build:latest \
