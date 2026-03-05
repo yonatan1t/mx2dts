@@ -187,6 +187,9 @@ _FAMILY_TABLES: list[tuple[str, dict, bool]] = [
     ("STM32G0", _G4_TABLE, True),   # G0 uses same DMAMUX scheme
     ("STM32H7", _H7_TABLE, True),
     ("STM32L5", _H7_TABLE, True),   # L5 DMAMUX request IDs very similar to H7
+    ("STM32WB", _G4_TABLE, True),   # WB uses DMAMUX; request IDs close to G4
+    ("STM32WL", _G4_TABLE, True),   # WL uses DMAMUX
+    ("STM32U5", _H7_TABLE, True),   # U5 uses GPDMA (DMAMUX-compatible slot IDs)
 ]
 
 

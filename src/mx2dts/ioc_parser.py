@@ -112,30 +112,60 @@ class IocFile:
         return names
 
     @property
+    def _sh_signal_map(self) -> dict[str, str]:
+        """Resolve 'SH.' alias signals (e.g., ADCx_IN1 → ADC1_IN1).
+
+        CubeMX writes shared/flexible ADC inputs as ``SH.ADCx_IN1.0=ADC1_IN1,...``
+        This builds a map from the alias (``ADCx_IN1``) to the concrete signal
+        (``ADC1_IN1``) using only the first assignment.
+        """
+        mapping: dict[str, str] = {}
+        for key, value in self.raw.items():
+            if not key.startswith("SH."):
+                continue
+            # key: "SH.ADCx_IN1.0"  value: "ADC1_IN1,IN1-Differential"
+            parts = key.split(".")
+            if len(parts) >= 3 and parts[2].isdigit():
+                alias = parts[1]          # "ADCx_IN1"
+                concrete = value.split(",")[0].strip()  # "ADC1_IN1"
+                if alias not in mapping:
+                    mapping[alias] = concrete
+        return mapping
+
+    @property
     def pins(self) -> dict[str, PinConfig]:
         """Dict of pin_name → PinConfig for all explicitly configured pins."""
+        sh_map = self._sh_signal_map
         result: dict[str, PinConfig] = {}
         for raw_name in self._raw_pin_names:
-            # Normalize: strip alternate function hint (e.g., "PC14/OSC32_IN" → "PC14")
-            pin_name = raw_name.split("/")[0]
+            # Normalize: strip alternate function hint.
+            # CubeMX uses "/" (e.g., "PC14/OSC32_IN") or "-" (e.g., "PC14-OSC32_IN").
+            # Keep only the GPIO port+number part.
+            pin_name = re.split(r"[/\-]", raw_name)[0]
 
             # Skip virtual pins (VP_xxx) and power pins
-            if pin_name.startswith(("VP_", "VBAT", "VDD", "VSS", "VCORE", "VREF")):
+            if pin_name.startswith(("VP_", "VBAT", "VDD", "VSS", "VCORE", "VREF", "OSC")):
                 continue
 
-            signal = self.raw.get(f"{pin_name}.Signal", "")
+            signal = self.raw.get(f"{raw_name}.Signal", "") or self.raw.get(f"{pin_name}.Signal", "")
             if not signal:
                 continue
+
+            # Resolve shared-signal aliases (ADCx_IN1 → ADC1_IN1, etc.)
+            signal = sh_map.get(signal, signal)
 
             result[pin_name] = PinConfig(
                 name=pin_name,
                 signal=signal,
-                label=self.raw.get(f"{pin_name}.GPIO_Label"),
-                mode=self.raw.get(f"{pin_name}.Mode"),
-                pull=self.raw.get(f"{pin_name}.GPIO_PuPd"),
-                speed=self.raw.get(f"{pin_name}.GPIO_Speed"),
-                gpio_mode=self.raw.get(f"{pin_name}.GPIO_Mode"),
-                locked=self.raw.get(f"{pin_name}.Locked", "").lower() == "true",
+                label=self.raw.get(f"{raw_name}.GPIO_Label") or self.raw.get(f"{pin_name}.GPIO_Label"),
+                mode=self.raw.get(f"{raw_name}.Mode") or self.raw.get(f"{pin_name}.Mode"),
+                pull=self.raw.get(f"{raw_name}.GPIO_PuPd") or self.raw.get(f"{pin_name}.GPIO_PuPd"),
+                speed=self.raw.get(f"{raw_name}.GPIO_Speed") or self.raw.get(f"{pin_name}.GPIO_Speed"),
+                gpio_mode=self.raw.get(f"{raw_name}.GPIO_Mode") or self.raw.get(f"{pin_name}.GPIO_Mode"),
+                locked=(
+                    self.raw.get(f"{raw_name}.Locked", "") or
+                    self.raw.get(f"{pin_name}.Locked", "")
+                ).lower() == "true",
             )
         return result
 
